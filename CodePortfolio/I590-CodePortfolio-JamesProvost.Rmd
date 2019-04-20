@@ -1,0 +1,271 @@
+---
+title: "I590 - Time Series Analysis - Code Portfolio"
+author: "James Provost"
+date: "April 21, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Importing / Processing Time Series
+
+Applied Statistical Time Series Analysis - has lots of data sets (astsa).  
+
+Reference:  https://www.stat.pitt.edu/stoffer/tsa4/xChanges.htm for information about astsa.
+
+```{r warning=FALSE, message=FALSE}
+library('astsa')
+```
+
+Read in data from a file.
+
+Reference:  Manipulating Time Series Data in R with xts & zoo - Chapter 1, Data Camp
+
+```{r warning=FALSE, message=FALSE}
+library(xts)
+# Convert either a time series object or zoo object to an xts object
+# XTS - eXtensible Time Series - based on a zoo object
+my.xts <- as.xts(chicken)
+
+# Write zoo object to file and then read in a previously saved zoo object
+write.zoo(my.xts, 'zoo-file.txt')
+my.xts2 <- as.xts(read.zoo('zoo-file.txt', FUN = as.yearmon))
+
+# Use regular file reading functions
+# read.csv(), read.table(), read.delim() - see R help
+```
+
+
+#### Create a time series
+
+Specify data, start (can be just a number, or a vector, with the second value referring to frequency), and frequency (number of units in a time period, like quarters or months)
+
+Reference:  Introduction to Time Series Analysis - Chapter 1, Data Camp.
+
+```{r}
+# Example creates a 60 period time series, from Jan 1980 with 12 periods
+# per year.  If frequency was 4, then it would start Q1 1980.
+my.ts <- ts(seq(1:60), start = c(1980,1), frequency = 12)
+
+my.ts
+
+my.ts <- ts(seq(1:60), start = c(1980,1), frequency = 4)
+
+my.ts
+```
+
+Create an xts object.
+
+Reference:  Introduction to Time Series Analysis - Chapter 1, Data Camp.
+
+```{r warning=FALSE, message=FALSE}
+library(xts)
+# Build a sample matrix and index vector of dates
+my.matrix <- matrix(1:5, ncol = 1, nrow = 5)
+my.index <- as.Date(c('2010-01-01','2011-01-01','2012-01-01','2013-01-01','2014-01-01'))
+# Create an xts object
+my.xts <- xts(my.matrix, order.by = my.index)
+my.xts
+```
+
+
+#### Basic exploration
+
+Basic functions to evaluate aspects of a time series object.
+
+Reference:  Introduction to Time Series Analysis, Data Camp.
+
+```{r}
+# Period the time series starts
+start(my.ts)
+# Period it ends
+end(my.ts)
+# Frequency
+frequency(my.ts)
+# The interval from one period to another in terms of time units (1/frequency)
+deltat(my.ts)
+# Whether it's a time series object
+is.ts(my.ts)
+# Vector of indices
+time(my.ts)
+# Position in cycle of the observation
+cycle(my.ts)
+# Pulls out part of a TS between specified start and end periods
+window(my.ts, start = c(1980,7), end = c(1980,12))
+```
+
+#### Data Manipulation
+
+Aggregation
+nfrequency  new number of observations per unit of time; must be a divisor of the frequency of x.
+FUN         aggregation function
+
+Reference:  Metcalfe, A. and Cowpertwait, P. (2009).  *Introductory Time Series with R*. New York, NY; Spring-Veriag, New York, p. 17
+
+```{r}
+library(astsa)
+# Sum by quarter
+aggregate(chicken, nfrequency = 4, FUN = sum)
+```
+
+Stationarity
+- Stable
+- Mean remains constant - there is no trend
+- Correlation from period to period remains constant
+
+Data Transformation.
+The diff() function shows the difference from period to period in the time series.  It is a way to remove the trend (including Random Walk) from a time series.  The log() function will help remove a growth in variability over time (like a multiplicative trend).  If you diff(log()), you could make this type of data stationary.
+
+Reference:  ARIMA Modeling with R - Chapter 1, Data Camp.
+
+```{r}
+library(astsa)
+# Using Johnson & Johnson quarterly earnings, because it has a growing variability in the trend
+ts.plot(jj)
+# Take out the upward curve, make it a more linear trend
+ts.plot(log(jj))
+# Take out the trend alone
+ts.plot(diff(jj))
+# Take out the curve then take out the trend
+ts.plot(diff(log(jj)))
+```
+
+Box-Cox Transformations.  A transformation for stabilizing variance, usually from -1 (inverse transformation) to 1 (no transformation), with things like natural log and square root in between.  BoxCox.lambda() will determine the best lambda value.
+
+Reference:  Forecasting Using R - Chapter 4, Data Camp.
+
+```{r message=FALSE, warning=FALSE}
+library(forecast)
+BoxCox.lambda(chicken)
+```
+
+
+## Exploratory Visualization of Time Series
+
+Basic plotting
+
+References:  Forecasting Using R, Chapter 1, Data Camp.
+https://www.rstudio.com/wp-content/uploads/2015/03/ggplot2-cheatsheet.pdf
+https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_ts.html
+
+```{r warning=FALSE, message=FALSE}
+library(astsa)
+library(ggplot2)
+
+plot(chicken)
+
+ts.plot(chicken)
+
+# Library ggfortify is needed for fortify to handle time series objects
+library(ggfortify)
+autoplot(chicken)
+```
+
+Also refer to decompose(), sarima(), checkresiduals(), acf(), pacf() and acf2() functions in the Time Series Analysis section.
+
+## Time Series Analysis
+
+Decompose - Split a TS into components for Trend, Seasonal and Random (Residual)
+
+Reference:  Metcalfe, A. and Cowpertwait, P. (2009).  *Introductory Time Series with R*. New York, NY; Spring-Veriag, New York, p. 22
+
+```{r}
+plot(decompose(chicken))
+```
+
+ARIMA - Auto Regressive Integrated Moving Average
+
+To build an ARIMA time series use arima.sim().  Specify the level of each of AR, Differencing and MA.  Optionally, specify the coefficients in additional parameters in the list, like ma or ar.
+
+Reference:  ARIMA Modeling with R - Chapter 1, Data Camp.
+
+```{r}
+# Example of a White Noise model:  0 AR, 0 Diff, 0 MA
+my.wn <- arima.sim(model = list(order = c(0,0,0)), n = 100)
+autoplot(my.wn)
+```
+
+To estimate an ARIMA model, use the arima() function to build such as model and then evaluate.
+
+This is some code to cycle through a bunch of models to see which one has the best AIC (you could use a different criterion, like BIC)
+
+Reference:  Metcalfe, A. and Cowpertwait, P. (2009).  *Introductory Time Series with R*. New York, NY; Spring-Veriag, New York, p. 131
+
+```{r}
+# Set the default - white noise
+best.order <- c(0, 0, 0)
+# Initialize the AIC score
+best.aic <- Inf
+# This is just looping through a few AR and MA models, may want to use
+# acf() and pacf() to get a sense for the size of these loops
+for (i in 0:2) for (j in 0:2) {
+  # Calculate the AIC for the next type of ARIMA model
+  fit.aic <- AIC(arima(diff(log(chicken)), order = c(i, 0, j)))
+  # If the new AIC is lowest, keep it, the type of model and the model
+  if (fit.aic < best.aic) {
+    best.order <- c(i, 0, j)
+    best.arma <- arima(diff(log(chicken)), order = best.order)
+    best.aic <- fit.aic
+  }
+}
+
+# Display the best type of model
+best.order
+```
+
+Can also build models using the sarima() function, supplying the AR, Differencing and MA parameters.  This function will also build several visualizations of the residuals of the model to help evaluate if this is a good model or not.
+
+Reference:  ARIMA Modeling with R - Chapter 2, Data Camp.
+
+```{r warning=FALSE, message=FALSE}
+library(astsa)
+my.arima <- sarima(chicken, p = 2, d = 0, q = 1)
+```
+
+checkresiduals() does analysis of a model's residuals, similar to sarima() earlier.
+
+Reference:  Forecasting Using R - Chapter 2, Data Camp.
+
+```{r}
+library(forecast)
+checkresiduals(auto.arima(chicken))
+```
+
+To evaluate the model you might use, use the auto correlation function acf() and the partial auto correlation function pacf().
+
+AR model:  ACF tails off, PACF cuts off at lag
+MA model:  ACF cuts off at lag, PACF tails off
+ARMA model:  both tail off
+
+Reference:  ARIMA Modeling with R - Chapter 2 and Chapter 3, Data Camp.
+
+```{r}
+acf(diff(chicken))
+pacf(diff(chicken))
+
+# Alternatively
+acf2(diff(chicken))
+```
+
+Error Trend and Seasonality models.  ets() function picks the best model using AICc.  Get the lambda from teh BoxCox.lambda() function (mentioned earlier).
+
+Reference:  Forecasting Using R - Chapter 4, Data Camp.
+
+```{r}
+ets(chicken, lambda = 1.686)
+```
+
+auto.arima() can also be used to pick a model and can handle seasonality.
+
+Reference:  Forecasting Using R - Chapter 4, Data Camp.
+
+```{r}
+auto.arima(chicken)
+```
+
+
+
