@@ -1,0 +1,138 @@
+---
+title: "I590 - Time Series Analysis - Final Report"
+author: "James Provost"
+date: "April 28, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(astsa)
+```
+
+## Data Description
+
+This report will explore the dataset birth from the astsa library (Applied Statistical Time Series Analysis - see https://www.rdocumentation.org/packages/astsa/versions/1.8/topics/birth for additional documentation).
+
+The dataset contains number of live births (in thousands) per month for the United States between January 1948 and January 1979.
+
+This table shows some basic statistics of these births.
+
+```{r}
+b.sd <- sd(birth)
+summary(birth)
+```
+
+In addition, the standard deviation of live births is `r round(b.sd, 1)`.  To confirm the contents of the time series, here are the start, end and frequency of the dataset, respectively.
+
+```{r}
+start(birth)
+end(birth)
+frequency(birth)
+```
+
+## Data Exploration
+
+```{r warning=FALSE, message=FALSE}
+par(pin = c(4, 2))
+plot(birth, main='US Live Births by Month', ylab='Live births (thousands)') 
+abline(reg=lm(birth~time(birth)))
+```
+
+This plot shows the overall time series across months.  Clearly there is a seasonal aspect that is repeated throughout and a trend that rises through the 1950s, peaking in the early 1960s before dropping, with a couple of upward trends around the late 1960s and again in the late 1970s.  The overall linear trend line shows as negative across the entire time series. 
+
+```{r warning=FALSE, message=FALSE}
+boxplot(birth~cycle(birth), main='US Live Births 1948 - 1979, Distribution by Month', 
+        xlab='Month', ylab='Live births (thousands)')
+```
+
+This plot shows the distribution of the values by each month of the year and gives a perspective of the seasonal aspect of the data.  The lowest births appear to be early in the year, in February and then April, with the highest live births in the fall around September and October.  The variance in each month is fairly consistent, with none of the months standing out significantly.
+
+As we look at the data, the variance is not growing over time, nor is there a growing trend, so there does not seem like an obvious transformation to make to the data, so we will not do that here.
+
+## Data Decomposition
+
+Next we will decompose the data set into overall trend, seasonal trend and random.
+
+```{r warning=FALSE, message=FALSE}
+library(ggfortify)
+birth.decomp <- decompose(birth)
+autoplot(birth.decomp)
+```
+
+From these graphs we can clearly see the overall trend is not linear and is similar to our earlier description.  We also see that there is a significant seasonal trend.  The remainder appears to be fairly stationary, with a mean around zero and fairly consistent variability.
+
+## Regression
+
+We'll now build a regression model based purely on the birth data, since there is no other data point with which to form a relationship, and show a summary of the coefficients.
+
+```{r}
+reg.fit <- lm(birth ~ time(birth), na.action = NULL)
+summary(reg.fit)
+```
+
+We can see that there is a small negative coefficient for the time component, which indicates a downward trend.  Note that this is the formula for the trend line that we plotted earlier and, as we noted earlier, that this data isn't well modeled by a linear trend, and therefore this model isn't a very good one at fully describing this data, especially if we wished to ultimately use it for prediction.
+
+Because we know that this model has a seasonal component to it, we'll build three other models, one with a lag of one period, one with a lag of 12 periods and one with a lag of both one period and 12 periods (a multi seasonal regression).
+
+Then we'll print a summary of the models, plot the fitted values of the models and print the AIC values of the three models.
+
+```{r message=FALSE, warning=FALSE}
+library(dynlm)
+reg.lag1.fit <- dynlm(birth ~ L(birth, 1))
+reg.lag2.fit <- dynlm(birth ~ L(birth, 12))
+reg.lag3.fit <- dynlm(birth ~ L(birth, 1) + L(birth, 12))
+summary(reg.lag1.fit)
+summary(reg.lag2.fit)
+summary(reg.lag3.fit)
+#plot(birth)
+plot(reg.lag1.fit$fitted.values, main = 'Lagged 1 Period')
+plot(reg.lag2.fit$fitted.values, main = 'Lagged 12 Periods')
+plot(reg.lag3.fit$fitted.values, main = 'Lagged 1 and 12 Periods')
+AIC(reg.lag1.fit)
+AIC(reg.lag2.fit)
+AIC(reg.lag3.fit)
+```
+
+We can see that the R-squared value gets better and better with each model, as does the AIC value.  This suggests the model with both a one period lag and a 12 period lag is the best model and suggests the data has a multi seasonal component.
+
+## ARIMA model
+
+We'll run auto correlation and partial auto correlation functions on the raw dataset.
+
+```{r }
+# Assign the results to a variable, just so they don't print out.
+res <- acf2(birth)
+```
+
+These graphs show a long trailing ACF with peaks around the yearly mark while the PACF cuts off more quickly while still having some response around the one year mark.  This is clearly a time series with a significant seasonal component (as we saw earlier when we decomposed the data) and that yearly peak again suggests this might have a multi seasonal model.
+
+We'll take the second difference of the data, lagging 12 periods for the second difference, plot the data and look at the ACF and PACF of the result.
+
+```{r}
+autoplot(diff(diff(birth, 12)), main = 'Differnce Lagging 12 Period of Difference of US Live Births')
+res <- acf2(diff(diff(birth,12)))
+```
+
+We see that the plot of the data looks fairly stationary.  We also see that there is a significant ACF response at 1 year and a only a little bit later while the PACF has a short cut off and then a response again at one year.  This is further evidence that a seasonal model might fit this data set.
+
+## Model Diagnostics
+
+Let's attempt to build a seasonal ARIMA model based on the time series.  We'll use auto.arima() to save us the computation time of choosing many different combinations of parameters.
+
+```{r message=FALSE, warning=FALSE}
+library(forecast)
+birth.fit <- auto.arima(birth)
+summary(birth.fit)
+```
+
+The auto.arima() function suggested a mixed seasonal ARIMA model with Auto Regressive, Differencing and Moving Average components.
+
+Let's evaluate the residuals of this model to see if it appears to be a good model.
+
+```{r}
+checkresiduals(birth.fit)
+```
+
+The residuals appear to be reasonably around zero, and the ACF shows fairly tight response and the distribution is reasonably normal.  Furthermore, the p-value is comfortably above 0.05 and suggests that the residuals are not correlated.  Finally, the AIC score for this model beats our best regression model, so we can conclude that this is a reasonably good model.
